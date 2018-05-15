@@ -10,6 +10,9 @@
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/Support/TargetSelect.h>
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/FileSystem.h"
 #include <llvm/Support/raw_os_ostream.h>
 #include <evm.h>
 #include "preprocessor/llvm_includes_end.h"
@@ -112,6 +115,15 @@ cl::opt<CacheMode> g_cache{"cache", cl::desc{"Cache compiled EVM code on disk"},
 		clEnumValN(CacheMode::clear, "c", "Clear the cache storage. Cache is disabled."),
 		clEnumValN(CacheMode::preload, "p", "Preload all cached objects."))};
 cl::opt<bool> g_stats{"st", cl::desc{"Statistics"}};
+
+
+static llvm::cl::opt<std::string>
+AsmOutputFilename("oll",
+		  llvm::cl::desc("Output generated LLVM bitcode"),
+		  llvm::cl::init(""),
+		  llvm::cl::value_desc("filename"));
+
+  
 cl::opt<bool> g_dump{"dump", cl::desc{"Dump LLVM IR module"}};
 
 void parseOptions()
@@ -351,6 +363,24 @@ ExecFunc JITImpl::compile(evm_revision _rev, bool _staticCall, byte const* _code
 	{
 		llvm::raw_os_ostream cerr{std::cerr};
 		module->print(cerr, nullptr);
+	}
+	
+	if (!AsmOutputFilename.empty()) {
+	  std::error_code error_code;
+	  std::unique_ptr<llvm::tool_output_file> asmOutput;	  
+	  asmOutput = llvm::make_unique<llvm::tool_output_file>(AsmOutputFilename.c_str(),
+								error_code,
+								llvm::sys::fs::F_Text);
+	  if (error_code) {
+	    if (llvm::errs().has_colors())
+	      llvm::errs().changeColor(llvm::raw_ostream::RED);
+	    llvm::errs() << "error: Could not open " << AsmOutputFilename << ": "
+			 << error_code.message () << "\n";
+	    if (llvm::errs().has_colors()) llvm::errs().resetColor();
+	  } else {
+	    module->print(asmOutput->os(), nullptr);
+	    asmOutput->keep ();
+	  }
 	}
 
 
