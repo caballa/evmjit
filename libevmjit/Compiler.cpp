@@ -7,7 +7,9 @@
 #include "preprocessor/llvm_includes_start.h"
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Module.h>
+#include <llvm/IR/Instruction.h>
 #include <llvm/IR/IntrinsicInst.h>
+#include <llvm/Support/raw_ostream.h>
 #include "preprocessor/llvm_includes_end.h"
 
 #include "JIT.h"
@@ -20,6 +22,9 @@
 #include "Endianness.h"
 #include "Arith256.h"
 #include "RuntimeManager.h"
+
+#include "PropertyInstrumenterManager.h"
+#include "IntegerOverflowInstrumenter.h"
 
 #ifndef __has_cpp_attribute
   #define __has_cpp_attribute(x) 0
@@ -41,6 +46,11 @@ namespace eth
 {
 namespace jit
 {
+
+static llvm::cl::opt<bool>
+SeaHornChecks("add-seahorn-checks",
+	      llvm::cl::desc("Instrument LLVM bitcode with some property checks for SeaHorn"),
+	      llvm::cl::init(false));
 
 static const auto c_destIdxLabel = "destIdx";
 
@@ -163,10 +173,12 @@ void Compiler::resolveJumps()
 	}
 }
 
-std::unique_ptr<llvm::Module> Compiler::compile(code_iterator _begin, code_iterator _end, std::string const& _id)
+std::unique_ptr<llvm::Module> Compiler::compile(code_iterator _begin,
+						code_iterator _end,
+						std::string const& _id)
 {
 	auto module = llvm::make_unique<llvm::Module>(_id, m_builder.getContext()); // TODO: Provide native DataLayout
-
+	
 	// Create main function
 	auto mainFuncType = llvm::FunctionType::get(Type::MainReturn, Type::RuntimePtr, false);
 	m_mainFunc = llvm::Function::Create(mainFuncType, llvm::Function::ExternalLinkage, _id, module.get());
@@ -211,8 +223,24 @@ std::unique_ptr<llvm::Module> Compiler::compile(code_iterator _begin, code_itera
 	runtimeManager.setJmpBuf(jmpBuf);
 	m_builder.CreateCondBr(normalFlow, entryBB->getNextNode(), abortBB, Type::expectTrue);
 
-	for (auto& block: blocks)
-		compileBasicBlock(block, runtimeManager, arith, memory, ext, gasMeter);
+	PropertyInstrumenterManager PIMan(*module);
+	if (SeaHornChecks) {
+	  // Define here all the property instrumenters and register
+	  // them in the manager
+	  IntegerOverflowInstrumenter *IOInst =
+	    new IntegerOverflowInstrumenter(m_builder.getContext());
+	  PIMan.registerInstrumenter(IOInst);
+	}
+	PIMan.printRegistered(llvm::errs());
+	
+	// We cannot add instrumentation until the CFG is completed,
+	// otherwise, we can get basic blocks without terminators.
+	std::vector<llvm::Instruction*> instructionsToProcess;
+	
+	for (auto& block: blocks) {
+	  compileBasicBlock(block, instructionsToProcess,
+			    runtimeManager, arith, memory, ext, gasMeter);
+	}
 
 	// Code for special blocks:
 	m_builder.SetInsertPoint(stopBB);
@@ -223,16 +251,35 @@ std::unique_ptr<llvm::Module> Compiler::compile(code_iterator _begin, code_itera
 
 	resolveJumps();
 
+	for (auto I: instructionsToProcess) {
+	  switch(I->getOpcode()) {
+	  case llvm::BinaryOperator::Add:
+	    PIMan.instrumentAdd(I);
+	    break;
+	  case llvm::BinaryOperator::Sub:
+	    PIMan.instrumentSub(I);
+	    break;
+	  case llvm::BinaryOperator::Mul:
+	    PIMan.instrumentMul(I);
+	    break;
+	  default: ;; /* TODO */
+	  }
+	}
+	
+	llvm::errs () << "Module after instrumentation\n" << *module << "\n";;
 	return module;
 }
 
 
-void Compiler::compileBasicBlock(BasicBlock& _basicBlock, RuntimeManager& _runtimeManager,
-								 Arith256& _arith, Memory& _memory, Ext& _ext, GasMeter& _gasMeter)
+void Compiler::compileBasicBlock(BasicBlock& _basicBlock,
+				 std::vector<llvm::Instruction*> &instsToProcess,
+				 RuntimeManager& _runtimeManager,
+				 Arith256& _arith, Memory& _memory,
+				 Ext& _ext, GasMeter& _gasMeter)
 {
 	m_builder.SetInsertPoint(_basicBlock.llvm());
 	LocalStack stack{m_builder, _runtimeManager};
-
+	
 	for (auto it = _basicBlock.begin(); it != _basicBlock.end(); ++it)
 	{
 		auto inst = Instruction(*it);
@@ -247,6 +294,9 @@ void Compiler::compileBasicBlock(BasicBlock& _basicBlock, RuntimeManager& _runti
 			auto lhs = stack.pop();
 			auto rhs = stack.pop();
 			auto result = m_builder.CreateAdd(lhs, rhs);
+			if (auto inst = llvm::dyn_cast<llvm::Instruction>(result)) {
+			  instsToProcess.push_back(inst);
+			}			
 			stack.push(result);
 			break;
 		}
@@ -256,6 +306,9 @@ void Compiler::compileBasicBlock(BasicBlock& _basicBlock, RuntimeManager& _runti
 			auto lhs = stack.pop();
 			auto rhs = stack.pop();
 			auto result = m_builder.CreateSub(lhs, rhs);
+			if (auto inst = llvm::dyn_cast<llvm::Instruction>(result)) {
+			  instsToProcess.push_back(inst);			  
+			}
 			stack.push(result);
 			break;
 		}
@@ -264,8 +317,11 @@ void Compiler::compileBasicBlock(BasicBlock& _basicBlock, RuntimeManager& _runti
 		{
 			auto lhs = stack.pop();
 			auto rhs = stack.pop();
-			auto res = m_builder.CreateMul(lhs, rhs);
-			stack.push(res);
+			auto result = m_builder.CreateMul(lhs, rhs);
+			if (auto inst = llvm::dyn_cast<llvm::Instruction>(result)) {
+			  instsToProcess.push_back(inst);			  			  
+			}			
+			stack.push(result);
 			break;
 		}
 

@@ -8,6 +8,7 @@
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
+#include <llvm/Support/raw_ostream.h>
 #include "preprocessor/llvm_includes_end.h"
 
 #include "Arith256.h"
@@ -37,6 +38,17 @@ public:
 
 char LongJmpEliminationPass::ID = 0;
 
+// Assume the function has one return instruction.
+static llvm::BasicBlock* getExitBlock(llvm::Function& func) {
+  for (auto& BB: func) {
+    if (llvm::isa<llvm::ReturnInst>(BB.getTerminator())) {
+      return &BB;
+    }
+  }
+  return nullptr;
+}
+
+  
 bool LongJmpEliminationPass::runOnFunction(llvm::Function& _func)
 {
 	auto iter = _func.getParent()->begin();
@@ -47,20 +59,25 @@ bool LongJmpEliminationPass::runOnFunction(llvm::Function& _func)
 	auto& ctx = _func.getContext();
 	auto abortCode = llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx), -1);
 
-	auto& exitBB = mainFunc.back();
-	assert(exitBB.getName() == "Exit");
-	auto retPhi = llvm::cast<llvm::PHINode>(&exitBB.front());
+	// JN: this assumption does not hold anymore because we introduce
+	// blocks with unreachable instructions.
+	// BasicBlock *exitBB = &(mainFunc.back());
+	llvm::BasicBlock *exitBB = getExitBlock(mainFunc);
+	assert (exitBB);
+	assert(exitBB->getName() == "Exit");
+	auto retPhi = llvm::cast<llvm::PHINode>(&exitBB->front());
 
 	auto modified = false;
 	for (auto bbIt = mainFunc.begin(); bbIt != mainFunc.end(); ++bbIt)
-	{
+	  {     if (bbIt->getName() == "SeaHorn_Error") continue;
+	      
 		if (auto term = llvm::dyn_cast<llvm::UnreachableInst>(bbIt->getTerminator()))
 		{
 			auto longjmp = term->getPrevNode();
 			assert(llvm::isa<llvm::CallInst>(longjmp));
 			auto bbPtr = &(*bbIt);
 			retPhi->addIncoming(abortCode, bbPtr);
-			llvm::ReplaceInstWithInst(term, llvm::BranchInst::Create(&exitBB));
+			llvm::ReplaceInstWithInst(term, llvm::BranchInst::Create(exitBB));
 			longjmp->eraseFromParent();
 			modified = true;
 		}
@@ -73,14 +90,17 @@ bool LongJmpEliminationPass::runOnFunction(llvm::Function& _func)
 
 bool optimize(llvm::Module& _module)
 {
-	auto pm = llvm::legacy::PassManager{};
-	pm.add(llvm::createFunctionInliningPass(2, 2, false));
-	pm.add(new LongJmpEliminationPass{}); 				// TODO: Takes a lot of time with little effect
-	pm.add(llvm::createCFGSimplificationPass());
-	pm.add(llvm::createInstructionCombiningPass());
-	pm.add(llvm::createAggressiveDCEPass());
-	pm.add(llvm::createLowerSwitchPass());
-	return pm.run(_module);
+  llvm::errs () << "Running the optimizer ... \n";
+  auto pm = llvm::legacy::PassManager{};
+  pm.add(llvm::createFunctionInliningPass(2, 2, false));
+  pm.add(new LongJmpEliminationPass{}); // TODO: Takes a lot of time with little effect
+  pm.add(llvm::createCFGSimplificationPass());
+  pm.add(llvm::createInstructionCombiningPass());
+  pm.add(llvm::createAggressiveDCEPass());
+  pm.add(llvm::createLowerSwitchPass());
+  llvm::errs () << "done!\n";	
+  return pm.run(_module);
+	
 }
 
 namespace

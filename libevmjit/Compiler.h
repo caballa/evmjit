@@ -2,6 +2,13 @@
 
 #include "JIT.h"
 #include "BasicBlock.h"
+#include "PropertyInstrumenterManager.h"
+#include <vector>
+
+namespace llvm
+{
+  class Instruction;
+}
 
 namespace dev
 {
@@ -25,13 +32,18 @@ public:
 
 	Compiler(Options const& _options, evm_revision _rev, bool _staticCall, llvm::LLVMContext& _llvmContext);
 
-	std::unique_ptr<llvm::Module> compile(code_iterator _begin, code_iterator _end, std::string const& _id);
+	std::unique_ptr<llvm::Module> compile(code_iterator _begin, code_iterator _end,
+					      std::string const& _id);
 
 private:
 
 	std::vector<BasicBlock> createBasicBlocks(code_iterator _begin, code_iterator _end);
 
-	void compileBasicBlock(BasicBlock& _basicBlock, class RuntimeManager& _runtimeManager, class Arith256& _arith, class Memory& _memory, class Ext& _ext, class GasMeter& _gasMeter);
+	void compileBasicBlock(BasicBlock& _basicBlock,
+			       std::vector<llvm::Instruction*> &instsToProcess,  
+			       class RuntimeManager& _runtimeManager,
+			       class Arith256& _arith, class Memory& _memory,
+			       class Ext& _ext, class GasMeter& _gasMeter);
 
 	void resolveJumps();
 

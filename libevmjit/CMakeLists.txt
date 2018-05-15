@@ -20,6 +20,9 @@ set(SOURCES
 	RuntimeManager.cpp	RuntimeManager.h
 	Type.cpp			Type.h
 	Utils.cpp			Utils.h
+	                        PropertyInstrumenter.h
+	PropertyInstrumenterManager.cpp   PropertyInstrumenterManager.h
+	IntegerOverflowInstrumenter.cpp   IntegerOverflowInstrumenter.h
 )
 source_group("" FILES ${SOURCES})
 
