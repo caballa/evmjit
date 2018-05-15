@@ -54,6 +54,7 @@ void PropertyInstrumenterManager::addAssertion(Value *Cond,
       ErrorBB = BasicBlock::Create(Context, "SeaHorn_Error", F);
       IRBuilder<> B(Context);
       B.SetInsertPoint(ErrorBB);
+      B.CreateCall(m_error_fn);
       B.CreateUnreachable();
       m_error_blocks[F] = ErrorBB;
     }

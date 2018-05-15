@@ -265,8 +265,10 @@ std::unique_ptr<llvm::Module> Compiler::compile(code_iterator _begin,
 	  default: ;; /* TODO */
 	  }
 	}
-	
+
+#if 0	
 	llvm::errs () << "Module after instrumentation\n" << *module << "\n";;
+#endif 	
 	return module;
 }
 

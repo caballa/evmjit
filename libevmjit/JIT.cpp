@@ -114,8 +114,9 @@ cl::opt<CacheMode> g_cache{"cache", cl::desc{"Cache compiled EVM code on disk"},
 		clEnumValN(CacheMode::write, "w", "Write only. No objects are loaded from cache."),
 		clEnumValN(CacheMode::clear, "c", "Clear the cache storage. Cache is disabled."),
 		clEnumValN(CacheMode::preload, "p", "Preload all cached objects."))};
-cl::opt<bool> g_stats{"st", cl::desc{"Statistics"}};
 
+cl::opt<bool> g_stats{"st", cl::desc{"Statistics"}};
+cl::opt<bool> g_dump{"dump", cl::desc{"Dump LLVM IR module"}};
 
 static llvm::cl::opt<std::string>
 AsmOutputFilename("oll",
@@ -123,9 +124,12 @@ AsmOutputFilename("oll",
 		  llvm::cl::init(""),
 		  llvm::cl::value_desc("filename"));
 
+static llvm::cl::opt<bool>
+DisableCodeExec("disable-code-exec",
+		llvm::cl::desc("Generate bitcode and bails out. Instrumentation can add external function calls that cannot be resolved."),
+		llvm::cl::init(false));
   
-cl::opt<bool> g_dump{"dump", cl::desc{"Dump LLVM IR module"}};
-
+  
 void parseOptions()
 {
 	static llvm::llvm_shutdown_obj shutdownObj{};
@@ -355,7 +359,6 @@ ExecFunc JITImpl::compile(evm_revision _rev, bool _staticCall, byte const* _code
 			//listener->stateChanged(ExecState::Optimization);
 			optimize(*module);
 		}
-
 		prepare(*module);
 	}
 
@@ -386,7 +389,11 @@ ExecFunc JITImpl::compile(evm_revision _rev, bool _staticCall, byte const* _code
 
 	m_engine->addModule(std::move(module));
 	//listener->stateChanged(ExecState::CodeGen);
-	return (ExecFunc)m_engine->getFunctionAddress(_codeIdentifier);
+	if (DisableCodeExec) {
+	  return nullptr;
+	} else {
+	  return (ExecFunc)m_engine->getFunctionAddress(_codeIdentifier);
+	}
 }
 
 } // anonymous namespace
@@ -487,7 +494,11 @@ static evm_result execute(evm_instance* instance, evm_context* context, evm_revi
         func = jit.compile(rev, staticCall, ctx.code(), ctx.codeSize(), codeIdentifier);
         if (!func)
         {
+	  if (DisableCodeExec) {
+	    result.status_code = EVM_SUCCESS;
+	  } else {
             result.status_code = EVM_INTERNAL_ERROR;
+	  }
             return result;
         }
         jit.mapExecFunc(codeIdentifier, func);

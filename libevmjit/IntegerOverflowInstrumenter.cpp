@@ -55,8 +55,8 @@ Value* IntegerOverflowInstrumenter::instrumentBinOpHelper(Instruction *I) {
   /////////////////////////////////////////////////////////////////  
   Constant *min = ConstantInt::get(biggerTy, APInt::getMinValue(w+1));
   Constant *max = ConstantInt::get(biggerTy, APInt::getMaxValue(w+1).lshr(1));
-  Value *lower = B.CreateICmpUGE(res, min);
-  Value *upper = B.CreateICmpULE(res, max);  
+  Value *lower = B.CreateICmpUGE(res, min, "int_overflow.min");
+  Value *upper = B.CreateICmpULE(res, max, "int_overflow.max");  
   Value *cond = B.CreateAdd(lower, upper);
   return cond;  
 }
