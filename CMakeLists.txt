@@ -41,7 +41,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT SANITIZE)
 	set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-undefined")
 endif()
 
-include(ProjectLLVM)
+include(ProjectLLVM.5.0)
 configure_llvm_project()
 
 add_subdirectory(libevmjit)
