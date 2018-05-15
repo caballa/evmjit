@@ -59,20 +59,25 @@ function(configure_llvm_project)
 
         include(ExternalProject)
         ExternalProject_Add(llvm
-            PREFIX ${CMAKE_SOURCE_DIR}/deps
-            URL http://llvm.org/releases/5.0.0/llvm-5.0.0.src.tar.xz
-            URL_HASH SHA256=e35dcbae6084adcf4abb32514127c5eabd7d63b733852ccdb31e06f1373136da
-            DOWNLOAD_NO_PROGRESS TRUE
-            BINARY_DIR ${CMAKE_SOURCE_DIR}/deps  # Build directly to install dir to avoid copy.
-            CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
-                       -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-                       -DLLVM_ENABLE_TERMINFO=OFF  # Disable terminal color support
-                       -DLLVM_ENABLE_ZLIB=OFF      # Disable compression support -- not needed at all
-                       -DLLVM_TARGETS_TO_BUILD=X86
-                       -DLLVM_INCLUDE_TOOLS=OFF
-                       -DLLVM_INCLUDE_EXAMPLES=OFF
-                       -DLLVM_INCLUDE_TESTS=OFF
-            LOG_CONFIGURE TRUE
+          PREFIX ${CMAKE_SOURCE_DIR}/deps
+	  SVN_REPOSITORY http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_380/final/
+          DOWNLOAD_NO_PROGRESS TRUE
+          BINARY_DIR ${CMAKE_SOURCE_DIR}/deps  # Build directly to install dir to avoid copy.
+	    CMAKE_ARGS
+	    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+	    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+	    -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+	    -DLLVM_TARGETS_TO_BUILD:STRING=X86 -DWITH_POLY:BOOL=OFF
+            -DLLVM_ENABLE_TERMINFO=OFF  # Disable terminal color support
+            -DLLVM_ENABLE_ZLIB=OFF      # Disable compression support -- not needed at all	    
+	    -DLLVM_ENABLE_PEDANTIC=OFF
+	    -DLLVM_ENABLE_PIC=ON -DLLVM_REQUIRES_RTTI:BOOL=TRUE
+	    -DLLVM_INCLUDE_TESTS:BOOL=OFF
+	    -DLLVM_INCLUDE_GO_TESTS=OFF
+	    -DLLVM_INCLUDE_EXAMPLES=OFF
+	    -DLLVM_INCLUDE_DOCS=OFF    
+	    -DLLVM_BINDINGS_LIST=" "
+	    LOG_CONFIGURE TRUE
             BUILD_COMMAND   ${BUILD_COMMAND}
             INSTALL_COMMAND cmake --build <BINARY_DIR> --config Release --target install
             LOG_INSTALL TRUE
